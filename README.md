@@ -1,6 +1,6 @@
 # blackpill_sandbox
 
-Rust/Embassy firmware for the [WeAct STM32F4x1Cx "Blackpill"](https://github.com/weactstudio/weactstudio.ministm32f4x1) board (STM32F411CEU6, 512KB flash). Blinks the on-board LED (`PC13`), with `defmt` logging over RTT, and tests a W25Qxx-family SPI NOR flash chip soldered onto the board's on-board flash footprint.
+Rust/Embassy firmware for the [WeAct STM32F4x1Cx "Blackpill"](https://github.com/weactstudio/weactstudio.ministm32f4x1) board (STM32F411CEU6, 512KB flash). Blinks the on-board LED (`PC13`), tests a W25Q32JV SPI NOR flash chip soldered onto the board's on-board flash footprint (via the [`w25q32jv`](https://crates.io/crates/w25q32jv) driver crate), and reports the results both over `defmt`/RTT and as a USB CDC-ACM virtual COM port — no debug probe needed to see the results.
 
 See `.claude/skills/blackpill-firmware/SKILL.md` for toolchain/hardware details and `reference/board-pinout.md` for the full pinout.
 
@@ -55,19 +55,36 @@ Only one flashing method is needed per session — they write to the same flash,
 
 ## On-board SPI flash test
 
-The WeAct Blackpill has an unpopulated footprint on the back of the board (SOIC-8 pads + a decoupling capacitor) for an optional SPI NOR flash chip. If you've soldered a W25Qxx-family chip there, this firmware tests it automatically on every boot:
+The WeAct Blackpill has an unpopulated footprint on the back of the board (SOIC-8 pads + a decoupling capacitor) for an optional SPI NOR flash chip. If you've soldered a **W25Q32JV** chip there, this firmware tests it automatically on every boot using the [`w25q32jv`](https://crates.io/crates/w25q32jv) driver crate:
 
-1. Reads the chip's JEDEC ID (`0x9F`) over **SPI1** (`CS=PA4`, `SCK=PA5`, `MISO=PA6`, `MOSI=PA7`).
-2. If a chip responds, erases the first 4KB sector, programs a 16-byte test pattern, reads it back, and compares.
+1. Reads the chip's factory-unique 64-bit ID over **SPI1** (`CS=PA4`, `SCK=PA5`, `MISO=PA6`, `MOSI=PA7`) as a presence check.
+2. If a chip responds, erases the first 4KB sector, programs a 16-byte test pattern, reads it back, and compares (the crate's `readback-check` feature also double-checks the write internally).
 
-Since USB DFU gives no `defmt`/RTT log output, the result is signaled by the **on-board `PC13` LED's blink rate** instead:
+The result is reported three ways at once — pick whichever is easiest to check:
 
-| Blink rate | Meaning |
-|---|---|
-| Fast (~50ms) | Chip detected, write/read test passed — flash is working |
-| Medium (~300ms) | Chip detected (valid JEDEC ID) but the write/read test failed |
-| Slow (~1000ms) | No chip detected (JEDEC ID came back all `0x00`/`0xFF`) — check wiring/soldering |
+- **USB serial (recommended, no probe needed)** — see "USB serial output" below.
+- **`defmt`/RTT**, if flashing via ST-Link (`cargo run --release`) — logs the unique ID bytes and pass/fail as text.
+- **On-board `PC13` LED blink rate**, always active as a fallback if you can't get a terminal open:
 
-If you're flashing via ST-Link instead (`cargo run --release`), the JEDEC ID bytes and pass/fail are also logged over `defmt`/RTT.
+  | Blink rate | Meaning |
+  |---|---|
+  | Fast (~50ms) | Chip detected, write/read test passed — flash is working |
+  | Medium (~300ms) | Chip detected (valid unique ID) but the write/read test failed |
+  | Slow (~1000ms) | No chip detected (unique ID came back all `0x00`/`0xFF`) — check wiring/soldering |
 
-**Note:** some early V2.0 boards route the flash footprint's `MISO` to `PB4` instead of `PA6` — if you get a slow blink but are confident the chip is soldered correctly, try swapping that pin in `src/main.rs`.
+**Note:** some early V2.0 boards route the flash footprint's `MISO` to `PB4` instead of `PA6` — if you get a slow blink but are confident the chip is soldered correctly, try swapping that pin in `src/main.rs`. Also note: the flash footprint's `HOLD#`/`WP#` lines aren't wired to the MCU on this board (tied high on the PCB) — `src/main.rs` passes the `w25q32jv` driver a no-op stand-in pin for both.
+
+## USB serial output (CDC-ACM)
+
+The board also enumerates as a USB virtual COM port on the same USB-C connector used for DFU flashing (separate device from the DFU bootloader — it only shows up once your firmware, not the ROM bootloader, is running). No ST-Link required.
+
+1. Flash the firmware (either upload method above) and let the board boot normally (i.e. **not** in DFU mode).
+2. It should enumerate as a serial device, e.g. on macOS: `/dev/cu.usbmodem*`. On Linux: `/dev/ttyACM*`.
+3. Open it with any serial terminal (baud rate doesn't matter for USB CDC-ACM):
+   ```sh
+   cat /dev/cu.usbmodem11      # macOS, read-only
+   screen /dev/ttyACM0         # Linux
+   ```
+4. The board re-sends the boot report (unique ID, flash-detected, write/read pass/fail) every 2 seconds while a terminal is connected.
+
+This is a one-way log stream (board → host only) — USB VID:PID `0xc0de:0xcafe`, defined in `src/main.rs`.
