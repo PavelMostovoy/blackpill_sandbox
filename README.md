@@ -1,6 +1,6 @@
 # blackpill_sandbox
 
-Rust/Embassy firmware for the [WeAct STM32F4x1Cx "Blackpill"](https://github.com/weactstudio/weactstudio.ministm32f4x1) board (STM32F411CEU6, 512KB flash). Blinks the on-board LED (`PC13`), with `defmt` logging over RTT.
+Rust/Embassy firmware for the [WeAct STM32F4x1Cx "Blackpill"](https://github.com/weactstudio/weactstudio.ministm32f4x1) board (STM32F411CEU6, 512KB flash). Blinks the on-board LED (`PC13`), with `defmt` logging over RTT, and tests a W25Qxx-family SPI NOR flash chip soldered onto the board's on-board flash footprint.
 
 See `.claude/skills/blackpill-firmware/SKILL.md` for toolchain/hardware details and `reference/board-pinout.md` for the full pinout.
 
@@ -52,3 +52,22 @@ The F411 has a built-in ROM bootloader that shows up as a USB DFU device — fla
    `:leave` tells the bootloader to reset into the new firmware immediately after flashing.
 
 Only one flashing method is needed per session — they write to the same flash, so whichever ran last is what's on the board.
+
+## On-board SPI flash test
+
+The WeAct Blackpill has an unpopulated footprint on the back of the board (SOIC-8 pads + a decoupling capacitor) for an optional SPI NOR flash chip. If you've soldered a W25Qxx-family chip there, this firmware tests it automatically on every boot:
+
+1. Reads the chip's JEDEC ID (`0x9F`) over **SPI1** (`CS=PA4`, `SCK=PA5`, `MISO=PA6`, `MOSI=PA7`).
+2. If a chip responds, erases the first 4KB sector, programs a 16-byte test pattern, reads it back, and compares.
+
+Since USB DFU gives no `defmt`/RTT log output, the result is signaled by the **on-board `PC13` LED's blink rate** instead:
+
+| Blink rate | Meaning |
+|---|---|
+| Fast (~50ms) | Chip detected, write/read test passed — flash is working |
+| Medium (~300ms) | Chip detected (valid JEDEC ID) but the write/read test failed |
+| Slow (~1000ms) | No chip detected (JEDEC ID came back all `0x00`/`0xFF`) — check wiring/soldering |
+
+If you're flashing via ST-Link instead (`cargo run --release`), the JEDEC ID bytes and pass/fail are also logged over `defmt`/RTT.
+
+**Note:** some early V2.0 boards route the flash footprint's `MISO` to `PB4` instead of `PA6` — if you get a slow blink but are confident the chip is soldered correctly, try swapping that pin in `src/main.rs`.
