@@ -1,0 +1,28 @@
+[package]
+name = "blackpill_sandbox"
+version = "0.1.0"
+edition = "2024"
+autotests = false
+
+[[bin]]
+name = "blackpill_sandbox"
+test = false
+bench = false
+
+[dependencies]
+embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32f411ce", "memory-x", "time-driver-any"] }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-time = { version = "0.5.1", features = ["defmt", "defmt-timestamp-uptime"] }
+cortex-m = { version = "0.7.9", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.0"
+defmt = "1.0.1"
+defmt-rtt = "1.0.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+
+[profile.release]
+debug = 2
+opt-level = 3
+#codegen-units = 1
+#lto = true
+#panic = "abort"

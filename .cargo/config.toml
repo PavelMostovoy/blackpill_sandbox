@@ -1,0 +1,16 @@
+[target.thumbv7em-none-eabi]
+runner = "probe-rs run --chip STM32F411CE --connect-under-reset"
+#linker = "flip-link"
+rustflags = [
+    "-C", "linker=flip-link",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tdefmt.x",
+    "-C", "link-arg=--nmagic",
+]
+
+[build]
+target = "thumbv7em-none-eabi"
+
+[env]
+DEFMT_LOG = "trace"
+DEFMT_RTT_BUFFER_SIZE = "1024"
